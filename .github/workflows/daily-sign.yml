@@ -1,0 +1,66 @@
+name: 每日晚寝自动签到
+
+# 触发条件：
+# 1. 定时触发（北京时间每天 21:31 = UTC 13:31）
+# 2. 手动触发（workflow_dispatch，方便测试）
+on:
+  schedule:
+    # UTC时间 13:31 = 北京时间 21:31
+    - cron: '31 13 * * *'
+  workflow_dispatch:
+    inputs:
+      debug_mode:
+        description: '调试模式（忽略21:20签到时间限制）'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+
+jobs:
+  sign-in:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 Python 环境
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: 安装依赖
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: 执行签到
+        env:
+          # 从 GitHub Secrets 读取用户配置
+          STUDENT_IDS: ${{ secrets.STUDENT_IDS }}
+          PASSWORDS: ${{ secrets.PASSWORDS }}
+          DEBUG_MODE: ${{ github.event.inputs.debug_mode || 'false' }}
+          # 邮件通知配置（可选，不用就留空）
+          EMAIL_ENABLED: ${{ secrets.EMAIL_ENABLED }}
+          EMAIL_SMTP: ${{ secrets.EMAIL_SMTP }}
+          EMAIL_PORT: ${{ secrets.EMAIL_PORT }}
+          EMAIL_SENDER: ${{ secrets.EMAIL_SENDER }}
+          EMAIL_AUTH_CODE: ${{ secrets.EMAIL_AUTH_CODE }}
+          EMAIL_RECEIVER: ${{ secrets.EMAIL_RECEIVER }}
+          # Server酱微信推送配置（可选，不用就留空）
+          SERVERCHAN_ENABLED: ${{ secrets.SERVERCHAN_ENABLED }}
+          SERVERCHAN_SENDKEY: ${{ secrets.SERVERCHAN_SENDKEY }}
+        run: |
+          echo "当前时间（UTC）：$(date -u '+%Y-%m-%d %H:%M:%S')"
+          echo "当前时间（北京）：$(TZ='Asia/Shanghai' date '+%Y-%m-%d %H:%M:%S')"
+          python cloud_sign.py
+
+      - name: 签到失败通知
+        if: failure()
+        run: |
+          echo "::warning::签到执行失败，请查看上方日志排查原因"
+          echo "可能原因：学号密码错误、学校系统维护、网络问题"
